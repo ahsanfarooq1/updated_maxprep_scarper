@@ -265,9 +265,19 @@ def _check_soup(soup, team_name):
 
 
 def _players_key(players):
+    # -1 sentinel for a missing stat (never a real value - minutes/points/FG
+    # are always >= 0): when two players tie on name, sorted() compares the
+    # next tuple field, and comparing None against an int raises TypeError -
+    # this was a dormant bug (only app.py's old gap finder ever called this,
+    # where a crash just meant a stale classification; the box-score scraper
+    # never called it at all, so the data itself was never at risk). The
+    # combined scraper needs both from the same call, so a crash here now
+    # loses the whole game, not just a classification - hence the fix.
+    def _n(v):
+        return v if v is not None else -1
     return sorted(
-        (p.get("player_name", ""), p.get("minutes_played"), p.get("points"),
-         p.get("fg_made"), p.get("fg_attempts"))
+        (p.get("player_name", ""), _n(p.get("minutes_played")), _n(p.get("points")),
+         _n(p.get("fg_made")), _n(p.get("fg_attempts")))
         for p in (players or [])
     )
 
