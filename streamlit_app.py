@@ -340,8 +340,8 @@ def _build_zip(paths_with_stats):
 #  PAGE
 # ══════════════════════════════════════════════════════════════════════════════
 
-st.set_page_config(page_title="MaxPreps Basketball Scraper", page_icon="🏀", layout="wide")
-st.title("🏀 MaxPreps Basketball Scraper")
+st.set_page_config(page_title="MaxPreps Basketball Scraper v2", page_icon="🏀", layout="wide")
+st.title("🏀 MaxPreps Basketball Scraper — Version 2")
 st.markdown("Select your options and click **Start Scraping** to begin.")
 
 with st.expander("📋 How the scraper works (click to expand)", expanded=False):
