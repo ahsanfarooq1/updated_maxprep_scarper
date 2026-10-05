@@ -221,7 +221,7 @@ def run_pipeline(state, sport, season, workers=15, output_dir=None, level='varsi
 
     ok = _run(py + ['fix_total_games_checked.py',
                      '--input', final_path, '--box-scores', box_path,
-                     '--output', final_path],
+                     '--output', final_path, '--gaps', gaps_path],
               env, 'C-fix-tgc')
     if not ok:
         _ts('STAGE C (TGC fix) FAILED - stopping.')

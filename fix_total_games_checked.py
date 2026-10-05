@@ -1,7 +1,8 @@
 """
 Post-process an existing accumulated / final file to enforce the rule:
 
-    TotalGamesChecked = max(current_TotalGamesChecked, distinct_contest_ids_in_box_scores)
+    TotalGamesChecked = max(current_TotalGamesChecked, distinct_contest_ids_in_box_scores,
+                             GP, gamesChecked_from_gaps_file_if_given)
 
 The gap finder occasionally undercounts: it enumerates the schedule from the
 schedule.json endpoint and stamps `gamesChecked = N`, but the scraper later
@@ -43,6 +44,35 @@ def print(*args, **kwargs):  # noqa: A001
     _original_print(time.strftime('[%Y-%m-%d %H:%M:%S]'), *args, **kwargs)
 
 
+def _build_gaps_checked_lookup(gaps_path):
+    """(team_id, team_name) -> gamesChecked straight from a gaps file -
+    same pattern as Accumulation_data.py's _load_games_checked_lookup.
+
+    Added for APP_v2/run_pipeline_v2.py: since stage B (stats-tab) now runs
+    concurrently with stage A (gap finder) instead of after it, stats-tab's
+    own output can no longer carry TotalGamesChecked forward (it doesn't
+    know the gap finder's count yet when it runs). merge_all_stats_tab.py
+    replaces a team's accumulated record wholesale with its stats-tab
+    record when one exists, so the gaps file's count would otherwise be
+    silently lost for every team that has a stats-tab record. Passing the
+    gaps file in here instead means that signal is read straight from its
+    real source, not relied on to survive an indirect round-trip."""
+    if not gaps_path or not os.path.exists(gaps_path):
+        return {}
+    with open(gaps_path, encoding='utf-8') as f:
+        gaps = json.load(f)
+    lookup = {}
+    for bucket in ('teamsFullBoxScores', 'teamsPartialBoxScores', 'teamsNoBoxScores'):
+        for t in gaps.get(bucket, []):
+            url = t.get('teamUrl', '')
+            tid = url.replace('https://www.maxpreps.com/', '').rstrip('/')
+            tname = t.get('teamName', '')
+            gc = t.get('gamesChecked')
+            if tid and tname and gc is not None:
+                lookup[(tid, tname)] = gc
+    return lookup
+
+
 def _build_box_count_lookup(box_scores_path):
     """For each (team_id, team_name) in the box-score file, count the number
     of distinct contest_ids attributed to that team's `team.team_id` field.
@@ -63,7 +93,7 @@ def _build_box_count_lookup(box_scores_path):
     return {k: len(v) for k, v in by_team.items()}
 
 
-def fix(input_path, box_scores_path, output_path):
+def fix(input_path, box_scores_path, output_path, gaps_path=None):
     if not os.path.exists(input_path):
         print(f'[ERROR] Input file not found: {input_path}')
         return None
@@ -79,6 +109,9 @@ def fix(input_path, box_scores_path, output_path):
 
     box_count_lookup = _build_box_count_lookup(box_scores_path)
     print(f'Box-score teams found: {len(box_count_lookup)}')
+    gaps_checked_lookup = _build_gaps_checked_lookup(gaps_path)
+    if gaps_path:
+        print(f'Gaps-file teams found: {len(gaps_checked_lookup)}')
 
     updated = []
     bumped = 0
@@ -96,11 +129,13 @@ def fix(input_path, box_scores_path, output_path):
             no_box_match += 1
         current = r.get('TotalGamesChecked')
         gp = int(r.get('GP') or 0)
+        gaps_count = gaps_checked_lookup.get(key, 0)
         # Authoritative count = max of every known signal:
-        #  - current TotalGamesChecked (gap finder's count)
+        #  - current TotalGamesChecked (whatever this record already has)
         #  - distinct box-score contest_ids for this team (what we scraped)
         #  - GP on the record (per-game accumulation count OR stats-tab GP)
-        target_tgc = max(int(current or 0), int(box_count), gp)
+        #  - gamesChecked straight from the gaps file, when one was passed in
+        target_tgc = max(int(current or 0), int(box_count), gp, int(gaps_count))
 
         if current is None:
             # Record never had a TotalGamesChecked field at all. Add one in
@@ -173,8 +208,12 @@ def main():
                     help='The box_scores JSON file for the same dataset.')
     ap.add_argument('--output',     required=True,
                     help='Output file (may be the same as --input to overwrite).')
+    ap.add_argument('--gaps',       default=None,
+                    help='Optional data-gaps JSON file for this dataset - read '
+                         'gamesChecked straight from it as an extra signal, '
+                         'instead of relying on it surviving the stats-tab merge.')
     args = ap.parse_args()
-    fix(args.input, args.box_scores, args.output)
+    fix(args.input, args.box_scores, args.output, gaps_path=args.gaps)
 
 
 if __name__ == '__main__':

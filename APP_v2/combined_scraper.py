@@ -228,7 +228,13 @@ def process_team(job):
         else:
             classify, box_rec = combined_game_worker(url, guid, ssid, t_name, t_id, job["opp_index"])
             if classify is None:
-                continue  # fetch error - skip, will retry next run
+                # Transient fetch failure for this one game - same silent-skip
+                # behavior the old app.py always had, just logged now so a
+                # missing game is diagnosable without a forensic file diff.
+                # Not cached, so a future incremental run will retry it.
+                print(f"  [WARN] {t_name}: fetch failed for one game, skipping "
+                      f"(will retry next run) - {url}")
+                continue
             cls = classify.pop("classification", "no_data")
             game_rec = classify
 
@@ -363,12 +369,20 @@ def run(state_code, sport, season, level="varsity", workers=TEAM_WORKERS,
     all_games = []
     errors = []
     jobs = []
+    processed_team_ids = set()
     for turl, (team, entries, overall_record) in sched_results.items():
         if entries is None:
             errors.append({"teamName": team["teamName"], "teamUrl": team["teamUrl"], "region": team["region"]})
         elif not entries:
+            city_m = re.search(rf"/{state_lower}/([^/]+)/", team["teamUrl"])
+            city = city_m.group(1).replace("-", " ").title() if city_m else state_name
             no_data.append({"teamName": team["teamName"], "teamUrl": team["teamUrl"], "region": team["region"],
-                             "gamesChecked": 0, "gamesWithStats": 0, "gamesMissing": 0})
+                             "gamesChecked": 0, "gamesWithStats": 0, "gamesMissing": 0,
+                             "alternativeSources": {
+                                 "scoreStream": gapfinder.scorestream_url(team["teamName"], state_name),
+                                 "googleSearch": gapfinder.google_search_url(team["teamName"], city, state_name),
+                             }})
+            processed_team_ids.add(gapfinder.team_url_to_path(team["teamUrl"]))
         else:
             jobs.append({"team": team, "entries": entries, "overall_record": overall_record,
                          "cache": cache, "opp_index": opp_index})
@@ -391,6 +405,7 @@ def run(state_code, sport, season, level="varsity", workers=TEAM_WORKERS,
                 elif gws > 0:        partial_data.append(gaps_entry)
                 else:                no_data.append(gaps_entry)
                 all_games.extend(box_records)
+                processed_team_ids.add(gapfinder.team_url_to_path(team["teamUrl"]))
                 done += 1
                 # Same line shape app.py's old Phase 2 used (`[N/M] .. Full:
                 # X | Part: Y | TeamName`) so streamlit_app.py's existing log
@@ -408,7 +423,8 @@ def run(state_code, sport, season, level="varsity", workers=TEAM_WORKERS,
         "meta": {
             "state": state_name, "stateCode": state_code,
             "sport": f"{sport.title()} Basketball", "season": season,
-            "totalTeams": total, "processedTeamsCount": len(full_data) + len(partial_data) + len(no_data),
+            "totalTeams": total, "processedTeamsCount": len(processed_team_ids),
+            "processedTeams": sorted(processed_team_ids),
             "totalGamesChecked": total_games_checked,
             "teamsFullBoxScores": len(full_data), "teamsPartialBoxScores": len(partial_data),
             "teamsNoBoxScores": len(no_data), "errors_count": len(errors),
@@ -429,6 +445,8 @@ def run(state_code, sport, season, level="varsity", workers=TEAM_WORKERS,
     box_out = {
         "meta": {
             "totalGames": len(all_games), "totalErrors": 0, "totalTeams": total,
+            "processedTeamsCount": len(processed_team_ids),
+            "processedTeams": sorted(processed_team_ids),
             "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
         },
         "games": all_games,
