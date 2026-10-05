@@ -1,0 +1,9 @@
+streamlit>=1.30.0
+requests>=2.32.0
+# Chrome TLS impersonation. MaxPreps answers plain-requests traffic with 406
+# in some environments; scrape_box_scores falls back to system curl and then
+# requests if this is absent, but install it for the most browser-like fetch.
+curl_cffi>=0.7
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+urllib3>=2.0.0
