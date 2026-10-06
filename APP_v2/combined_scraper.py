@@ -444,9 +444,10 @@ def run(state_code, sport, season, level="varsity", workers=TEAM_WORKERS,
     # Write box-scores file (same shape as scrape_box_scores.py._save produces).
     box_out = {
         "meta": {
-            "totalGames": len(all_games), "totalErrors": 0, "totalTeams": total,
+            "totalGames": len(all_games), "totalErrors": len(errors), "totalTeams": total,
             "processedTeamsCount": len(processed_team_ids),
             "processedTeams": sorted(processed_team_ids),
+            "errors": errors,
             "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
         },
         "games": all_games,
